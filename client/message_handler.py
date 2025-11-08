@@ -54,9 +54,14 @@ class ClientProtocol:
             'username': self.username,
             'payload': {'text': text}
         }
+        data = encode_message(msg)
+        # run the actual write in the asyncio event loop thread
+        asyncio.run_coroutine_threadsafe(self._async_send(data), self.loop)
+
+    async def _async_send(self, data: bytes):
         try:
-            self.writer.write(encode_message(msg))
-            # no await here; writer runs in event loop
+            self.writer.write(data)
+            await self.writer.drain()
         except Exception as e:
             logging.error(f'Failed to send: {e}')
             if self.ui:

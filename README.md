@@ -34,4 +34,9 @@ Quick start (local testing)
 5. Start the GUI client:
    `python3 client/main.py --host 127.0.0.1 --port 9001 --user alice`
 
+Local testing - alternative way:
+1. Run `python3 server/test_server.py --host 127.0.0.1 --port 9001` in Terminal 1
+2. Run `python3 client/main.py --host 127.0.0.1 --port 9001 --user alice` in Terminal 2
+3. Run `python3 client/main.py --host 127.0.0.1 --port 9001 --user bob` in Terminal 3
+
 See `aws_setup_guide.md` for EC2 deployment instructions and `server`/`client` code comments for details.
