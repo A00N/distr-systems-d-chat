@@ -6,6 +6,7 @@ async def handle(reader, writer, clients):
     addr = writer.get_extra_info('peername')
     clients.add(writer)
     print("Client connected:", addr)
+    print(clients)
     try:
         while True:
             line = await reader.readline()

@@ -8,6 +8,7 @@ class MessageType(str, Enum):
     SYNC_REQ = 'SYNC_REQ'
     SYNC_RESP = 'SYNC_RESP'
     JOIN = 'JOIN'
+    LEAVE = 'LEAVE'
     HEARTBEAT = 'HEARTBEAT'
 
 def encode_message(msg: dict) -> bytes:

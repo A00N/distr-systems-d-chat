@@ -24,7 +24,7 @@ if __name__ == '__main__':
     t.start()
 
     protocol = ClientProtocol(loop, args.host, args.port, args.user)
-    ui = ChatUI(username=args.user, send_callback=protocol.send_chat)
+    ui = ChatUI(username=args.user, send_callback=protocol.send_chat, on_close=protocol.send_leave)
     protocol.set_ui(ui)
     asyncio.run_coroutine_threadsafe(protocol.connect(), loop)
 
