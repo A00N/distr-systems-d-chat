@@ -17,23 +17,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy server application files
 COPY server/ ./server/
 
-# Create directory for chat logs and configs
-RUN mkdir -p /app/data /app/configs
-
-# Copy default config files
-COPY server/config_coordinator.json ./configs/
-COPY server/config_worker_example.json ./configs/
+# Create directory for chat logs
+RUN mkdir -p /app/data
 
 # Create a non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-# Expose the default port (can be overridden)
+# Expose both HTTP and RAFT ports
 EXPOSE 9000
+EXPOSE 6000
 
 # Set the working directory to server for easier imports
 WORKDIR /app/server
 
-# Default command - can be overridden
-CMD ["python", "main.py", "--mode", "coordinator", "--host", "0.0.0.0", "--port", "9000"]
+# Use environment variable for node ID (will be set at runtime)
+CMD ["sh", "-c", "python node.py --id ${DCHAT_NODE_ID:-node} --http-port 9000 --raft-port 6000 --peers ''"]
