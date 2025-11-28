@@ -1,3 +1,7 @@
-# Server uses only the Python standard library.
-# The GUI client uses 'requests' for HTTP.
-requests>=2.0.0
+boto3==1.41.5
+botocore==1.41.5
+jmespath==1.0.1
+python-dateutil==2.9.0.post0
+s3transfer==0.15.0
+six==1.17.0
+urllib3==2.5.0

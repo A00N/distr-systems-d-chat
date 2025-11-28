@@ -6,10 +6,10 @@ from typing import List
 
 from raft import RaftNode
 from state_machine import ChatState
+from discovery import build_peer_provider_from_env
 
 import os
 
-# Optional: public hostname for the cluster (e.g. ALB DNS in AWS)
 DCHAT_PUBLIC_HOST = os.environ.get("DCHAT_PUBLIC_HOST")  # e.g. "my-alb-1234.elb.amazonaws.com"
 DCHAT_PUBLIC_SCHEME = os.environ.get("DCHAT_PUBLIC_SCHEME", "http")
 
@@ -211,10 +211,16 @@ if __name__ == "__main__":
     parser.add_argument("--raft-port", type=int, default=10000)
     parser.add_argument("--peers", default="")
     args = parser.parse_args()
-    peers = [p for p in args.peers.split(",") if p.strip()]
+
+    # Static peers from CLI (for local/dev)
+    static_peers = [p for p in args.peers.split(",") if p.strip()]
+
+    # Build peer provider (static vs AWS EC2)
+    peer_provider = build_peer_provider_from_env(static_peers)
+    resolved_peers = peer_provider.peers()
 
     loop = asyncio.get_event_loop()
-    loop.create_task(run_node(args.id, args.http_port, args.raft_port, peers))
+    loop.create_task(run_node(args.id, args.http_port, args.raft_port, resolved_peers))
     try:
         loop.run_forever()
     except KeyboardInterrupt:
