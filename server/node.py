@@ -219,8 +219,11 @@ if __name__ == "__main__":
     peer_provider = build_peer_provider_from_env(static_peers)
     resolved_peers = peer_provider.peers()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     loop.create_task(run_node(args.id, args.http_port, args.raft_port, resolved_peers))
+
     try:
         loop.run_forever()
     except KeyboardInterrupt:
