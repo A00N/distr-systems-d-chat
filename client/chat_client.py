@@ -29,7 +29,6 @@ class ChatApp:
 
         # RAFT-backed state from server
         self._all_messages = []      # full log from /messages
-        self._global_last_seen = 0   # index into _all_messages we have processed
         self._current_room = "general"
         self._rooms = {"general"}
         self._pending_ids = set()
@@ -38,6 +37,10 @@ class ChatApp:
         # Track active users and when we last saw them
         self._users = set()
         self._user_last_seen = {}
+
+        # NEW: track which committed chat messages we've already rendered
+        self._seen_msg_ids = set()
+
 
         self.ui = ChatUI(
             username=username,
@@ -201,9 +204,9 @@ class ChatApp:
         Periodically fetch /messages from the cluster (with redirect handling)
         and:
           - update the room list based on room_add/room_delete events
-          - show new chat messages for the current room
+          - show chat messages for the current room once per unique id
           - clear gray pending lines when their committed message arrives
-          - update active users list
+          - update active users list and prune inactive ones
         """
         while self._polling:
             try:
@@ -211,21 +214,19 @@ class ChatApp:
                 msgs = resp.json()  # expected to be a list of dicts
 
                 if isinstance(msgs, list):
-                    old_len = len(self._all_messages)
+                    # keep a copy of the full log for room switching
                     self._all_messages = msgs
 
-                    new_msgs = msgs[self._global_last_seen:]
-                    for m in new_msgs:
+                    for m in msgs:
                         msg_type = m.get("type", "chat")
                         user = m.get("user")
 
-                        # --- Active users tracking ---
+                        # --- Active users tracking (ok to update every time) ---
                         if user:
                             now = time.time()
                             if user not in self._users:
                                 self._users.add(user)
                                 self.ui.add_user_connected(user)
-                            # update last-seen timestamp
                             self._user_last_seen[user] = now
 
                         if msg_type == "room_add":
@@ -238,42 +239,48 @@ class ChatApp:
                             room = m.get("room")
                             if room and room in self._rooms and room != "general":
                                 self._rooms.remove(room)
-                                # If we are currently in the deleted room, move to general
                                 if self._current_room == room:
                                     self._current_room = "general"
                                     self.ui.set_rooms(sorted(self._rooms), select=self._current_room)
-                                    # redraw messages for general
                                     self._on_room_change(self._current_room)
                                 else:
                                     self.ui.set_rooms(sorted(self._rooms), select=self._current_room)
 
                         elif msg_type == "chat":
-                            # Remove pending gray echo if this message corresponds to one we sent
                             msg_id = m.get("id")
+
+                            # If this committed message corresponds to a local pending echo,
+                            # remove the gray line.
                             if msg_id and msg_id in self._pending_ids:
                                 self._pending_ids.remove(msg_id)
                                 self.ui.remove_pending_message(msg_id)
+
+                            # De-duplication: only render each id once
+                            if msg_id and msg_id in self._seen_msg_ids:
+                                continue  # already shown
+
+                            if msg_id:
+                                self._seen_msg_ids.add(msg_id)
 
                             room = m.get("room", "general")
                             if room == self._current_room:
                                 user_display = m.get("user", "?")
                                 text = m.get("text", "")
                                 self.ui.add_message(user_display, text, style="normal")
-                    # After processing all new messages, prune inactive users
+
+                    # Prune inactive users (no activity in last 300 seconds)
                     now = time.time()
                     inactive = [
                         u for u, last in self._user_last_seen.items()
-                        if now - last > 300  # 5 minutes
+                        if now - last > 300
                     ]
-
                     for u in inactive:
                         if u in self._users:
                             self._users.remove(u)
                             self.ui.remove_user_connected(u)
-                        # remove from last-seen map
                         del self._user_last_seen[u]
-                    self._global_last_seen = len(msgs)
-                    if new_msgs:
+
+                    if msgs:
                         self.ui.set_status(True)
 
             except Exception as e:
@@ -281,6 +288,8 @@ class ChatApp:
                 self.ui.set_status(False)
 
             time.sleep(1.0)
+
+
 
     # ---------- close ----------
 
