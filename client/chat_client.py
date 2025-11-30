@@ -9,7 +9,7 @@ from gui import ChatUI
 from client import post_with_raft_redirects, get_with_raft_redirects
 
 # In AWS, set this to your ALB URL, e.g. "https://my-alb-dns"
-CLUSTER_URL = "http://127.0.0.1:9000"
+CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
 
