@@ -28,8 +28,8 @@ distr-systems-d-chat/
 ├── requirements.txt
 ├── user-data.sh
 ├── .github/
-│   ├── workflows/
-│   |   ├── push-image.yml
+│   └── workflows/
+│       └── push-image.yml
 ├── server/
 │   ├── discovery.py          
 │   ├── message_protocol.py          
