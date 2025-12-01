@@ -27,6 +27,9 @@ distr-systems-d-chat/
 ├── README.md
 ├── requirements.txt
 ├── user-data.sh
+├── .github/
+│   ├── workflows/
+│   |   ├── push-image.yml
 ├── server/
 │   ├── discovery.py          
 │   ├── message_protocol.py          
@@ -35,8 +38,9 @@ distr-systems-d-chat/
 │   └── state_machine.py
 └── client/
     ├── chat_client.py   
-    ├── client.py        
-    └── gui.py           
+    ├── client.py
+    ├── gui.py
+    └── README.md
 ````
 
 ---
