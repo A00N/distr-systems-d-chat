@@ -21,8 +21,12 @@ It supports:
 
 ```text
 distr-systems-d-chat/
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
 ├── README.md
 ├── requirements.txt
+├── user-data.sh
 ├── server/
 │   ├── discovery.py          
 │   ├── message_protocol.py          
