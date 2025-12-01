@@ -20,18 +20,19 @@ It supports:
 ## 1. Project Structure
 
 ```text
-dchat_raft/
+distr-systems-d-chat/
 ├── README.md
 ├── requirements.txt
 ├── server/
-│   ├── node.py          # HTTP API + RAFT integration
-│   ├── raft.py          # RAFT core: leader election + log replication
-│   ├── state_machine.py # Chat state machine (appends committed messages to JSONL)
-│   └── message_protocol.py
+│   ├── discovery.py          
+│   ├── message_protocol.py          
+│   ├── node.py 
+│   ├── raft.py
+│   └── state_machine.py
 └── client/
-    ├── gui.py           # Tkinter GUI (rooms, users, styling)
     ├── chat_client.py   # High-level client: username, rooms, polling, etc.
-    └── client.py        # HTTP helpers with RAFT-aware redirect handling
+    ├── client.py        # HTTP helpers with RAFT-aware redirect handling
+    └── gui.py           # Tkinter GUI (rooms, users, styling)
 ````
 
 ---
