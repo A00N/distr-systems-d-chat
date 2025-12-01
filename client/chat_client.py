@@ -8,7 +8,6 @@ from tkinter import simpledialog
 from gui import ChatUI
 from client import post_with_raft_redirects, get_with_raft_redirects
 
-# In AWS, set this to your ALB URL, e.g. "https://my-alb-dns"
 CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
@@ -38,7 +37,7 @@ class ChatApp:
         self._users = set()
         self._user_last_seen = {}
 
-        # NEW: track which committed chat messages we've already rendered
+        # Track which committed chat messages we've already rendered
         self._seen_msg_ids = set()
 
 
@@ -174,26 +173,19 @@ class ChatApp:
 
     def _send_message_background(self, payload: dict) -> None:
         try:
-            # Previously we logged:
-            #   self.ui.add_system_message("Sending message to cluster...")
-            # Keep it quiet now.
-
             resp = post_with_raft_redirects(CLUSTER_URL, payload)
 
             data = resp.json()
             status = data.get("status")
 
             if status == "ok":
-                # Previously:
-                #   self.ui.add_system_message("Message committed via leader.")
-                # Just flip status, no chat noise.
                 self.ui.set_status(True)
             else:
                 self.ui.add_system_message(f"Server responded with: {data}")
                 self.ui.set_status(False)
 
         except Exception as e:
-            # This covers redirect loops, long elections, network errors, etc.
+            # Covers redirect loops, long elections, network errors, etc.
             self.ui.add_system_message(f"Error sending message: {e}")
             self.ui.set_status(False)
 

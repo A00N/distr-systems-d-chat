@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List, Protocol
 
 try:
-    import boto3  # needed in AWS mode
+    import boto3
 except ImportError:
     boto3 = None
 

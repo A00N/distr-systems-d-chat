@@ -10,7 +10,7 @@ Send a chat message:
 ```bash
 curl -X POST http://127.0.0.1:9000/chat \
   -H "Content-Type: application/json" \
-  -d '{"user": "nooa", "text": "hello from client"}'
+  -d '{"user": "user", "text": "hello from client"}'
 ```
 
 Fetch all messages:
