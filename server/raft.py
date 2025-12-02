@@ -71,8 +71,9 @@ class RaftNode:
         self._lock = asyncio.Lock()
 
     def _random_timeout(self) -> float:
-        # randomized to avoid split votes
-        return random.uniform(3.0, 5.0)
+        # Broader, longer timeout to avoid dueling elections in AWS
+        return random.uniform(5.0, 10.0)
+
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -260,12 +261,12 @@ class RaftNode:
 
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=0.5
+                asyncio.open_connection(host, port), timeout=2
             )
             writer.write(encode_msg(msg))
             await writer.drain()
 
-            line = await asyncio.wait_for(reader.readline(), timeout=0.5)
+            line = await asyncio.wait_for(reader.readline(), timeout=2)
             writer.close()
             await writer.wait_closed()
 
@@ -332,12 +333,12 @@ class RaftNode:
                 # term changed; abort
                 return
             if votes > (len(self.peers) + 1) // 2:
-                logger.info("%s became LEADER for term %d", self.node_id, self.current_term)
+                logger.info("%s became LEADER for term %d (votes=%d)", self.node_id, self.current_term, votes)
                 self.state = "leader"
                 self.leader_id = self.node_id
                 self.last_heartbeat = asyncio.get_event_loop().time()
             else:
-                logger.info("%s failed to win election for term %d", self.node_id, term_started)
+                logger.info("%s failed to win election for term %d (votes=%d)", self.node_id, term_started, votes)
                 self.state = "follower"
 
     async def _send_request_vote(self, host: str, port: int, msg: Dict[str, Any]) -> Dict[str, Any]:
