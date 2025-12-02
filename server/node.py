@@ -21,6 +21,8 @@ LOCAL_LEADER_HTTP_PORTS = {
 }
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
+logging.getLogger("raft").setLevel(logging.DEBUG)
+
 logger = logging.getLogger("node")
 
 
@@ -218,7 +220,7 @@ if __name__ == "__main__":
     # Build peer provider (static vs AWS EC2)
     peer_provider = build_peer_provider_from_env(static_peers)
     resolved_peers = peer_provider.peers()
-
+    logger.info("Resolved RAFT peers for %s: %s", args.id, resolved_peers)  
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
