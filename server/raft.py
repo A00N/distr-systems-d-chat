@@ -123,7 +123,16 @@ class RaftNode:
             last_log_index = msg.get("last_log_index", -1)
             last_log_term = msg.get("last_log_term", 0)
 
+            logger.info(
+                "%s: Received RequestVote from %s (term=%d, last_log_index=%d, last_log_term=%d)",
+                self.node_id, candidate_id, term, last_log_index, last_log_term
+            )
+
             if term < self.current_term:
+                logger.info(
+                    "%s: Rejecting RequestVote from %s (term=%d < current_term=%d)",
+                    self.node_id, candidate_id, term, self.current_term
+                )
                 return {
                     "type": "RequestVoteResponse",
                     "term": self.current_term,
@@ -146,17 +155,26 @@ class RaftNode:
             if (self.voted_for in (None, candidate_id)) and up_to_date:
                 self.voted_for = candidate_id
                 self.last_heartbeat = asyncio.get_event_loop().time()
+                logger.info(
+                    "%s: Granting vote to %s for term %d",
+                    self.node_id, candidate_id, self.current_term
+                )
                 return {
                     "type": "RequestVoteResponse",
                     "term": self.current_term,
                     "vote_granted": True,
                 }
 
+            logger.info(
+                "%s: Not granting vote to %s (voted_for=%s, up_to_date=%s)",
+                self.node_id, candidate_id, self.voted_for, up_to_date
+            )
             return {
                 "type": "RequestVoteResponse",
                 "term": self.current_term,
                 "vote_granted": False,
             }
+
 
     async def _handle_append_entries(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         async with self._lock:
@@ -167,7 +185,16 @@ class RaftNode:
             entries = msg.get("entries", [])
             leader_commit = msg.get("leader_commit", -1)
 
+            logger.info(
+                "%s: Received AppendEntries from %s (term=%d, prev_log_index=%d, entries=%d, leader_commit=%d)",
+                self.node_id, leader_id, term, prev_log_index, len(entries), leader_commit
+            )
+
             if term < self.current_term:
+                logger.info(
+                    "%s: Rejecting AppendEntries from %s (term=%d < current_term=%d)",
+                    self.node_id, leader_id, term, self.current_term
+                )
                 return {
                     "type": "AppendEntriesResponse",
                     "term": self.current_term,
@@ -177,17 +204,24 @@ class RaftNode:
             self.current_term = term
             self.state = "follower"
             self.last_heartbeat = asyncio.get_event_loop().time()
-            self.leader_id = leader_id
 
             # check log consistency
             if prev_log_index >= 0:
                 if prev_log_index >= len(self.log):
+                    logger.info(
+                        "%s: AppendEntries log inconsistency (prev_log_index=%d >= len(log)=%d)",
+                        self.node_id, prev_log_index, len(self.log)
+                    )
                     return {
                         "type": "AppendEntriesResponse",
                         "term": self.current_term,
                         "success": False,
                     }
                 if self.log[prev_log_index].term != prev_log_term:
+                    logger.info(
+                        "%s: AppendEntries term mismatch at index %d (expected_term=%d, got=%d) -> truncating",
+                        self.node_id, prev_log_index, self.log[prev_log_index].term, prev_log_term
+                    )
                     # conflict: delete entry and all that follow it
                     self.log = self.log[: prev_log_index]
                     return {
@@ -204,12 +238,18 @@ class RaftNode:
                 self.commit_index = min(leader_commit, len(self.log) - 1)
                 await self._apply_committed()
 
+            logger.info(
+                "%s: AppendEntries from %s succeeded (new_log_len=%d, commit_index=%d)",
+                self.node_id, leader_id, len(self.log), self.commit_index
+            )
+
             return {
                 "type": "AppendEntriesResponse",
                 "term": self.current_term,
                 "success": True,
                 "match_index": len(self.log) - 1,
             }
+
 
     # === client command from HTTP layer ===
 
@@ -260,24 +300,47 @@ class RaftNode:
         }
 
         try:
+            logger.info(
+                "%s: Sending AppendEntries to %s:%d (term=%d, prev_log_index=%d, entries=%d, commit_index=%d)",
+                self.node_id, host, port, self.current_term, prev_log_index, len(entries), self.commit_index
+            )
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=2
+                asyncio.open_connection(host, port), timeout=2.0
             )
             writer.write(encode_msg(msg))
             await writer.drain()
 
-            line = await asyncio.wait_for(reader.readline(), timeout=2)
+            line = await asyncio.wait_for(reader.readline(), timeout=2.0)
             writer.close()
             await writer.wait_closed()
 
             if not line:
+                logger.warning(
+                    "%s: Empty response to AppendEntries from %s:%d",
+                    self.node_id, host, port
+                )
                 return {"success": False}
-            return decode_msg(line.decode().strip())
 
-        except TimeoutError:
+            resp = decode_msg(line.decode().strip())
+            logger.info(
+                "%s: Received AppendEntriesResponse from %s:%d -> %s",
+                self.node_id, host, port, resp
+            )
+            return resp
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s: Timeout sending AppendEntries to %s:%d",
+                self.node_id, host, port
+            )
             return {"success": False}
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "%s: Error sending AppendEntries to %s:%d: %s",
+                self.node_id, host, port, e
+            )
             return {"success": False}
+
 
 
     # === background tasks ===
@@ -343,23 +406,45 @@ class RaftNode:
 
     async def _send_request_vote(self, host: str, port: int, msg: Dict[str, Any]) -> Dict[str, Any]:
         try:
+            logger.info(
+                "%s: Sending RequestVote to %s:%d (term=%d)",
+                self.node_id, host, port, msg.get("term", 0)
+            )
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=0.5
+                asyncio.open_connection(host, port), timeout=2.0
             )
             writer.write(encode_msg(msg))
             await writer.drain()
 
-            line = await asyncio.wait_for(reader.readline(), timeout=0.5)
+            line = await asyncio.wait_for(reader.readline(), timeout=2.0)
             writer.close()
             await writer.wait_closed()
 
             if not line:
+                logger.warning(
+                    "%s: Empty response to RequestVote from %s:%d",
+                    self.node_id, host, port
+                )
                 return {"vote_granted": False}
-            return decode_msg(line.decode().strip())
 
-        except TimeoutError:
+            resp = decode_msg(line.decode().strip())
+            logger.info(
+                "%s: Received RequestVoteResponse from %s:%d -> %s",
+                self.node_id, host, port, resp
+            )
+            return resp
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                "%s: Timeout sending RequestVote to %s:%d",
+                self.node_id, host, port
+            )
             return {"vote_granted": False}
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "%s: Error sending RequestVote to %s:%d: %s",
+                self.node_id, host, port, e
+            )
             return {"vote_granted": False}
 
 
