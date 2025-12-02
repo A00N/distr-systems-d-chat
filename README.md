@@ -20,18 +20,27 @@ It supports:
 ## 1. Project Structure
 
 ```text
-dchat_raft/
+distr-systems-d-chat/
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
 ├── README.md
 ├── requirements.txt
+├── user-data.sh
+├── .github/
+│   └── workflows/
+│       └── push-image.yml
 ├── server/
-│   ├── node.py          # HTTP API + RAFT integration
-│   ├── raft.py          # RAFT core: leader election + log replication
-│   ├── state_machine.py # Chat state machine (appends committed messages to JSONL)
-│   └── message_protocol.py
+│   ├── discovery.py          
+│   ├── message_protocol.py          
+│   ├── node.py 
+│   ├── raft.py
+│   └── state_machine.py
 └── client/
-    ├── gui.py           # Tkinter GUI (rooms, users, styling)
-    ├── chat_client.py   # High-level client: username, rooms, polling, etc.
-    └── client.py        # HTTP helpers with RAFT-aware redirect handling
+    ├── chat_client.py   
+    ├── client.py
+    ├── gui.py
+    └── README.md
 ````
 
 ---
@@ -88,8 +97,6 @@ For `/chat`:
   * Returns `HTTP/1.1 302 Found` **without** `Location`
   * This tells clients: "no leader yet, wait/retry"
 
-> This design makes `/chat` “leader-seeking” without hardcoding leader addresses.
-> The GUI client knows how to follow these redirects robustly.
 
 ---
 
@@ -333,7 +340,6 @@ The Users list shows **recently active** users:
   * Their “last seen” timestamp is updated.
 * Periodically, users with no activity for more than **5 minutes** are removed from the list.
 
-This is a simple heuristic; there is no explicit “disconnect” event in HTTP mode.
 
 ---
 
@@ -416,8 +422,6 @@ This makes the client resilient to:
 
 ## 8. AWS Deployment (High-Level)
 
-> You said you’re comfortable with AWS, so this is just the mapping.
-> No CloudFormation here, only conceptual steps.
 
 ### 8.1 EC2 Nodes
 
@@ -479,8 +483,6 @@ Then run:
 python client/chat_client.py
 ```
 
-The GUI behaves exactly like in local dev, but all traffic goes through ALB.
-Leader movement, node restarts, etc., are handled via RAFT and the redirect logic.
 
 ---
 

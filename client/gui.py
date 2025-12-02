@@ -195,12 +195,9 @@ class ChatUI:
         tagname = f"pending_{msg_id}"
         ranges = self.txt.tag_ranges(tagname)
         if ranges:
-            # tag ranges come in start/end pairs; for our pending insert it's one pair
             start = ranges[0]
             end = ranges[1] if len(ranges) >= 2 else ranges[0]
             self.txt.configure(state='normal')
-            # Delete exactly the tagged range. If the newline isn't tagged,
-            # we might leave an empty line, which is much safer than merging lines.
             self.txt.delete(start, end)
             self.txt.configure(state='disabled')
 
@@ -248,7 +245,6 @@ class ChatUI:
         existing = self.user_list.get(0, tk.END)
         if username not in existing:
             self.user_list.insert(tk.END, username)
-        # Also show a small line in chat:
         self._add_system_message_ui(f"{username} seen in chat")
 
     def remove_user_connected(self, username):
