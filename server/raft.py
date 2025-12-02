@@ -372,6 +372,7 @@ class RaftNode:
             last_term = self.log[last_index].term if self.log else 0
 
         # send RequestVote to all peers
+    # send RequestVote to all peers
         tasks = []
         for peer in self.peers:
             host, port_s = peer.split(":")
@@ -385,24 +386,53 @@ class RaftNode:
             }
             tasks.append(self._send_request_vote(host, port, msg))
 
+        max_term_from_responses = term_started
+
         if tasks:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for r in results:
-                if isinstance(r, dict) and r.get("vote_granted"):
-                    votes += 1
+                if isinstance(r, dict):
+                    resp_term = r.get("term", 0)
+                    if resp_term > max_term_from_responses:
+                        max_term_from_responses = resp_term
+                    if r.get("vote_granted"):
+                        votes += 1
 
         async with self._lock:
-            if self.current_term != term_started:
-                # term changed; abort
-                return
-            if votes > (len(self.peers) + 1) // 2:
-                logger.info("%s became LEADER for term %d (votes=%d)", self.node_id, self.current_term, votes)
-                self.state = "leader"
-                self.leader_id = self.node_id
-                self.last_heartbeat = asyncio.get_event_loop().time()
-            else:
-                logger.info("%s failed to win election for term %d (votes=%d)", self.node_id, term_started, votes)
+            # If we learned about a higher term, update and step down.
+            if max_term_from_responses > self.current_term:
+                logger.info(
+                    "%s: Saw higher term %d in RequestVote responses (current_term=%d), stepping down",
+                    self.node_id, max_term_from_responses, self.current_term
+                )
+                self.current_term = max_term_from_responses
+                self.voted_for = None
                 self.state = "follower"
+                return
+
+            if self.current_term != term_started:
+                # term changed due to newer RPCs; abort
+                return
+
+            majority = (len(self.peers) + 1) // 2
+
+            if votes > majority:
+                logger.info(
+                    "%s became LEADER for term %d (votes=%d)",
+                    self.node_id, self.current_term, votes
+                )
+                self.state = "leader"
+                self.last_heartbeat = asyncio.get_event_loop().time()
+                self._failed_elections = 0
+            else:
+                self._failed_elections += 1
+                logger.info(
+                    "%s failed to win election for term %d (votes=%d, failed_elections=%d)",
+                    self.node_id, term_started, votes, self._failed_elections
+                )
+                # fallback logic (if you kept it) goes here, otherwise:
+                self.state = "follower"
+
 
     async def _send_request_vote(self, host: str, port: int, msg: Dict[str, Any]) -> Dict[str, Any]:
         try:
