@@ -1,9 +1,12 @@
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog
 from datetime import datetime
+import random
 
 
 class ChatUI:
+    COLOR_PALETTE = ['yellow4', 'red', 'forest green', 'saddle brown', 'purple1', 
+                    'dark orange', 'royal blue', 'hot pink', 'MistyRose4', 'violet red']
     def __init__(
         self,
         username='anon',
@@ -19,6 +22,9 @@ class ChatUI:
         self.room_change_callback = room_change_callback
         self.room_add_callback = room_add_callback
         self.room_delete_callback = room_delete_callback
+
+        self.user_colors = {}
+        self.used_colors = set()
 
         self.root = tk.Tk()
         self.root.title(f'D-Chat: {self.username}')
@@ -57,6 +63,8 @@ class ChatUI:
         # ---- Users section ----
         lbl = tk.Label(sidebar, text='Users')
         lbl.pack(anchor='nw')
+        # Use a dictionary to map usernames to colors for the listbox
+        # This Listbox needs a custom method to display colors.
         self.user_list = tk.Listbox(sidebar, height=10, exportselection=False)
         self.user_list.pack(side='left', fill='y', expand=False)
         ul_scroll = tk.Scrollbar(sidebar, orient='vertical', command=self.user_list.yview)
@@ -73,7 +81,7 @@ class ChatUI:
         self.txt = scrolledtext.ScrolledText(main, wrap=tk.WORD, state='disabled', width=60, height=20)
         self.txt.grid(row=0, column=0, columnspan=2, sticky='nsew')
 
-        # Text styles
+        # Text styles (base styles)
         self.txt.tag_configure('normal', foreground='black')
         self.txt.tag_configure('local_echo', foreground='gray')
         self.txt.tag_configure('system', foreground='blue')
@@ -89,6 +97,28 @@ class ChatUI:
         # Status line
         self.status_label = tk.Label(main, text='Status: Disconnected', fg='red')
         self.status_label.grid(row=2, column=0, columnspan=2, sticky='w', padx=5, pady=(0, 5))
+
+    def _get_user_color(self, username):
+        """
+        Assigns or retrieves a color and Tkinter tag for a username.
+        """
+        if username not in self.user_colors:
+            # Simple random assignment, picking from available colors
+            available_colors = [c for c in self.COLOR_PALETTE if c not in self.used_colors]
+            if not available_colors:
+                # If all colors are used, reset the set or pick randomly from all
+                color = random.choice(self.COLOR_PALETTE)
+            else:
+                color = random.choice(available_colors)
+
+            tagname = f"user_{username.replace(' ', '_')}_tag"
+            self.user_colors[username] = {'color': color, 'tag': tagname}
+            self.used_colors.add(color)
+
+            # Configure the tag in the ScrolledText widget
+            self.txt.tag_configure(tagname, foreground=color)
+
+        return self.user_colors[username]['color'], self.user_colors[username]['tag']
 
     # ---------- rooms ----------
 
@@ -155,14 +185,30 @@ class ChatUI:
         else:
             ts = timestamp
         try:
+            # Need to pass the user for color lookup
             self.root.after(0, lambda: self._add_message_ui(user, message, ts, style))
         except Exception:
             self._add_message_ui(user, message, ts, style)
 
     def _add_message_ui(self, user, message, timestamp=None, style='normal'):
-        line = f"{timestamp}  {user}: {message}\n"
+        # Get color/tag for the user
+        _, user_tag = self._get_user_color(user)
+
+        line_prefix = f"{timestamp}  "
+        user_part = f"{user}: "
+        message_part = f"{message}\n"
+
         self.txt.configure(state='normal')
-        self.txt.insert(tk.END, line, (style,))
+        
+        # Insert timestamp and space (normal style)
+        self.txt.insert(tk.END, line_prefix, ('normal',))
+        
+        # Insert username and colon (with user-specific color tag)
+        self.txt.insert(tk.END, user_part, (user_tag, style))
+        
+        # Insert message content (normal style)
+        self.txt.insert(tk.END, message_part, ('normal', style))
+        
         self.txt.see(tk.END)
         self.txt.configure(state='disabled')
 
@@ -245,9 +291,18 @@ class ChatUI:
             self._add_user_connected_ui(username)
 
     def _add_user_connected_ui(self, username):
+        # Ensure the user has a color assigned and the tag is created
+        user_color, _ = self._get_user_color(username)
+        
         existing = self.user_list.get(0, tk.END)
         if username not in existing:
+            # Insert the username into the listbox
             self.user_list.insert(tk.END, username)
+            
+            # Change the color of the inserted item
+            idx = self.user_list.get(0, tk.END).index(username)
+            self.user_list.itemconfig(idx, {'fg': user_color})
+
         self._add_system_message_ui(f"{username} seen in chat")
 
     def remove_user_connected(self, username):
@@ -263,7 +318,16 @@ class ChatUI:
         items = list(self.user_list.get(0, tk.END))
         for i, v in enumerate(items):
             if v == username:
+                # Remove from listbox
                 self.user_list.delete(i)
+                
+                # Remove color/tag from internal mapping (optional, but good for cleanup)
+                if username in self.user_colors:
+                    color_to_remove = self.user_colors[username]['color']
+                    # Only remove from used_colors if no other user is using it
+                    if all(v['color'] != color_to_remove for u, v in self.user_colors.items() if u != username):
+                        self.used_colors.discard(color_to_remove)
+                    del self.user_colors[username]
                 break
         self._add_system_message_ui(f"{username} disconnected")
 

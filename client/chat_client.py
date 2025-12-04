@@ -112,7 +112,6 @@ class ChatApp:
                 user = m.get("user", "?")
                 text = m.get("text", "")
                 timestamp = m.get("timestamp")
-                print(timestamp)
                 self.ui.add_message(user, text, timestamp, style="normal")
 
     def _on_room_add_requested(self, room_name: str):
