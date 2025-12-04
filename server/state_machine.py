@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import time
+from datetime import datetime
 from typing import Dict, List
 
 # Maximum number of messages to retain
@@ -34,7 +36,20 @@ class ChatState:
                     self._log.append(json.loads(line))
                 except Exception:
                     continue
-        
+        # Backfill missing timestamps for older chat messages
+        changed = False
+        now = time.time()
+        for msg in self._log:
+            if isinstance(msg, dict) and msg.get("type") == "chat" and "timestamp" not in msg:
+                # prefer any existing 'ts' field if present
+                if "ts" in msg:
+                    msg["timestamp"] = msg["ts"]
+                else:
+                    msg["timestamp"] = now
+                changed = True
+        if changed:
+            # persist updated log with backfilled timestamps
+            self._persist()
         # Apply retention policy on load to handle any pre-existing overflow
         if len(self._log) > MAX_MESSAGES:
             trimmed_count = len(self._log) - MAX_MESSAGES
@@ -54,6 +69,15 @@ class ChatState:
         guarantees all nodes apply the same commands in the same order,
         all nodes will trim at the same point and maintain identical state.
         """
+        # Ensure chat messages include a stable timestamp field for clients
+        if command.get("type") == "chat":
+            # prefer existing explicit 'timestamp' or 'ts' field, otherwise set now
+            if "timestamp" not in command:
+                if "ts" in command:
+                    command["timestamp"] = command["ts"]
+                else:
+                    command["timestamp"] = datetime.now().strftime('%H:%M')
+
         self._log.append(command)
         
         # Retention policy: keep only the latest MAX_MESSAGES

@@ -148,16 +148,19 @@ class ChatUI:
 
     # ---------- helpers for messages ----------
 
-    def add_message(self, user, message, style='normal'):
+    def add_message(self, user, message, timestamp=None, style='normal'):
         """Public API: add a chat line. Safe to call from other threads."""
+        if timestamp is None:
+            ts = datetime.now().strftime('%H:%M')
+        else:
+            ts = timestamp
         try:
-            self.root.after(0, lambda: self._add_message_ui(user, message, style))
+            self.root.after(0, lambda: self._add_message_ui(user, message, ts, style))
         except Exception:
-            self._add_message_ui(user, message, style)
+            self._add_message_ui(user, message, ts, style)
 
-    def _add_message_ui(self, user, message, style='normal'):
-        ts = datetime.now().strftime('%H:%M')
-        line = f"{ts}  {user}: {message}\n"
+    def _add_message_ui(self, user, message, timestamp=None, style='normal'):
+        line = f"{timestamp}  {user}: {message}\n"
         self.txt.configure(state='normal')
         self.txt.insert(tk.END, line, (style,))
         self.txt.see(tk.END)

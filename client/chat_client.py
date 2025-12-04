@@ -8,7 +8,8 @@ from tkinter import simpledialog
 from gui import ChatUI
 from client import post_with_raft_redirects, get_with_raft_redirects
 
-CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
+CLUSTER_URL = "http://127.0.0.1:9000"
+# CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
 MAX_MESSAGE_LENGTH = 256
@@ -110,7 +111,9 @@ class ChatApp:
             if room == self._current_room:
                 user = m.get("user", "?")
                 text = m.get("text", "")
-                self.ui.add_message(user, text, style="normal")
+                timestamp = m.get("timestamp")
+                print(timestamp)
+                self.ui.add_message(user, text, timestamp, style="normal")
 
     def _on_room_add_requested(self, room_name: str):
         if len(self._rooms) >= MAX_ROOMS and room_name not in self._rooms:
@@ -260,13 +263,13 @@ class ChatApp:
             try:
                 resp = get_with_raft_redirects(CLUSTER_URL, "/messages", timeout=2.0)
                 msgs = resp.json()  # expected to be a list of dicts
-
                 if isinstance(msgs, list):
                     # keep a copy of the full log for room switching
                     self._all_messages = msgs
 
                     for m in msgs:
                         msg_type = m.get("type", "chat")
+                        timestamp = m.get("timestamp") 
                         user = m.get("user")
 
                         # --- Active users tracking (ok to update every time) ---
@@ -296,7 +299,7 @@ class ChatApp:
 
                         elif msg_type == "chat":
                             msg_id = m.get("id")
-
+                            timestamp = m.get("timestamp")  # or "ts"
                             # If this committed message corresponds to a local pending echo,
                             # remove the gray line.
                             if msg_id and msg_id in self._pending_ids:
@@ -314,7 +317,7 @@ class ChatApp:
                             if room == self._current_room:
                                 user_display = m.get("user", "?")
                                 text = m.get("text", "")
-                                self.ui.add_message(user_display, text, style="normal")
+                                self.ui.add_message(user_display, text, timestamp, style="normal")
 
                     # Prune inactive users (no activity in last 300 seconds)
                     now = time.time()

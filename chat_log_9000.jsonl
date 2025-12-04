@@ -1,0 +1,18 @@
+{"type": "chat", "user": "moro", "text": "äööö", "room": "general", "id": "97ba4e68-c901-4934-b204-c8f0100113f0", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "terse", "text": "jou", "room": "general", "id": "17626aad-6099-4df8-a4f3-62090f1c2fc3", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "moro", "text": "mitä jätkä", "room": "general", "id": "f75de331-4201-4d6f-80ba-5d805809ea1b", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "moro", "text": "haloo", "room": "general", "id": "e1530bec-284d-444d-8b49-ce851b8ac35c", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "testi", "text": "haloo", "room": "general", "id": "7a1217ef-58ff-4336-9095-b5e300abb208", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "ööööö", "text": "u", "room": "general", "id": "6af240fb-a14e-4322-956f-9094dea0b600", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "fds", "text": "d", "room": "general", "id": "257d95ac-074f-4fe0-81de-b591f33c25b9", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "cdsa", "text": "ewf", "room": "general", "id": "49a95c04-72a8-43d7-850e-cc3c4ca6755a", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "ewrft", "text": "4t", "room": "general", "id": "c70b0a88-0dc3-4020-aea8-cd1b9cc6fd33", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "pöö", "text": "hei", "room": "general", "id": "389b5699-52c7-4b25-8683-0a847792bda8", "timestamp": 1764865863.1262536}
+{"type": "room_add", "room": "87", "user": "pöö"}
+{"type": "chat", "user": "pöö", "text": "tyr", "room": "87", "id": "5e29bf56-cb7a-4583-a943-ad3195182c75", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "joujou", "text": "höäh", "room": "general", "id": "66e1a8ba-58bb-4264-850c-ffad587b235e", "timestamp": 1764865863.1262536}
+{"type": "room_delete", "room": "87", "user": "joujou"}
+{"type": "room_add", "room": "perkele", "user": "joujou"}
+{"type": "chat", "user": "joujou", "text": "apua", "room": "perkele", "id": "1a3b0c8a-58ad-4a32-a1ab-7dc6a1f702b1", "timestamp": 1764865863.1262536}
+{"type": "chat", "user": "564", "text": "ewrwe", "room": "perkele", "id": "403269d1-f28b-411e-8e65-7b23fc094a81", "timestamp": "18:33"}
+{"type": "chat", "user": "pöö", "text": "heippa", "room": "perkele", "id": "70dcac38-2f0f-4193-a6a0-31cbbe2ce4ac", "timestamp": "18:35"}
