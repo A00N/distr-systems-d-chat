@@ -224,10 +224,22 @@ class RaftNode:
             entries = msg.get("entries", [])
             leader_commit = msg.get("leader_commit", -1)
 
-            logger.info(
-                "%s: Received AppendEntries from %s (term=%d, prev_log_index=%d, entries=%d, leader_commit=%d)",
-                self.node_id, leader_id, term, prev_log_index, len(entries), leader_commit
-            )
+            # Track what changed for smarter logging
+            old_leader = self.leader_id
+            old_commit_index = self.commit_index
+            old_term = self.current_term
+
+            # Only log at INFO level if something significant is happening
+            if entries or term != old_term or leader_id != old_leader:
+                logger.info(
+                    "%s: Received AppendEntries from %s (term=%d, prev_log_index=%d, entries=%d, leader_commit=%d)",
+                    self.node_id, leader_id, term, prev_log_index, len(entries), leader_commit
+                )
+            else:
+                logger.debug(
+                    "%s: Received heartbeat from %s (term=%d, leader_commit=%d)",
+                    self.node_id, leader_id, term, leader_commit
+                )
 
             if term < self.current_term:
                 logger.info(
@@ -246,10 +258,12 @@ class RaftNode:
             self.leader_id = leader_id  # Track who the leader is
             self.last_heartbeat = asyncio.get_event_loop().time()
 
-            logger.debug(
-                "%s: Recognized %s as leader for term %d",
-                self.node_id, leader_id, term
-            )
+            # Log leader recognition only when leader changes
+            if leader_id != old_leader:
+                logger.info(
+                    "%s: Recognized %s as leader for term %d",
+                    self.node_id, leader_id, term
+                )
 
             # check log consistency
             if prev_log_index >= 0:
@@ -280,14 +294,19 @@ class RaftNode:
             for entry_dict in entries:
                 self.log.append(LogEntry.from_dict(entry_dict))
 
+            commit_changed = False
+
             if leader_commit > self.commit_index:
                 self.commit_index = min(leader_commit, len(self.log) - 1)
+                commit_changed = True
                 await self._apply_committed()
 
-            logger.info(
-                "%s: AppendEntries from %s succeeded (new_log_len=%d, commit_index=%d)",
-                self.node_id, leader_id, len(self.log), self.commit_index
-            )
+            # Only log success at INFO level if something meaningful happened
+            if entries or commit_changed or term != old_term:
+                logger.info(
+                    "%s: AppendEntries from %s succeeded (new_log_len=%d, commit_index=%d)",
+                    self.node_id, leader_id, len(self.log), self.commit_index
+                )
 
             return {
                 "type": "AppendEntriesResponse",
