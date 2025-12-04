@@ -47,13 +47,14 @@ docker run -d \
   --restart unless-stopped \
   -p 5000:9000 \
   -p 6000:6000 \
-  -e DCHAT_NODE_ID="${INSTANCE_ID}" \
+  -e DCHAT_NODE_ID="${PRIVATE_IP}:6000" \
   -e DCHAT_PUBLIC_HOST="DChatALB-596522607.eu-north-1.elb.amazonaws.com" \
   -e DCHAT_PUBLIC_SCHEME="http" \
   -e DCHAT_DISCOVERY_MODE="aws-ec2" \
   -e DCHAT_CLUSTER_NAME="dchat-cluster" \
   -e DCHAT_RAFT_PORT=6000 \
   -e DCHAT_PRIVATE_IP="${PRIVATE_IP}" \
+  -e DCHAT_RAFT_LOG_LEVEL="INFO" \
   -e AWS_REGION="eu-north-1" \
   -e AWS_DEFAULT_REGION="eu-north-1" \
   826087506501.dkr.ecr.eu-north-1.amazonaws.com/distributed/server:latest

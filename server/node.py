@@ -14,6 +14,7 @@ from discovery import build_peer_provider_from_env
 
 DCHAT_PUBLIC_HOST = os.environ.get("DCHAT_PUBLIC_HOST")  # e.g. "my-alb-1234.elb.amazonaws.com"
 DCHAT_PUBLIC_SCHEME = os.environ.get("DCHAT_PUBLIC_SCHEME", "http")
+DCHAT_RAFT_LOG_LEVEL = os.environ.get("DCHAT_RAFT_LOG_LEVEL", "DEBUG").upper()
 
 MAX_MESSAGE_LENGTH = 256
 
@@ -25,7 +26,7 @@ LOCAL_LEADER_HTTP_PORTS = {
 }
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
-logging.getLogger("raft").setLevel(logging.DEBUG)
+logging.getLogger("raft").setLevel(getattr(logging, DCHAT_RAFT_LOG_LEVEL, logging.DEBUG))
 
 logger = logging.getLogger("node")
 
