@@ -599,3 +599,27 @@ class RaftNode:
                 await self.apply_callback(entry.command)
             except Exception:
                 logger.exception("Failed to apply command")
+
+    # === Debug helpers ===
+
+    def get_all_node_ids(self) -> List[str]:
+        """Return list of all node IDs in the cluster (self + peers)."""
+        node_ids = [self.node_id]
+        for peer in self.peers:
+            # Peers are stored as "host:port", extract a readable ID
+            # For AWS: private IPs like "10.0.1.5:10000"
+            # For local: "127.0.0.1:10001" etc.
+            node_ids.append(peer)
+        return node_ids
+
+    def get_leader_id(self) -> Optional[str]:
+        """Return the current known leader ID, or None if unknown."""
+        return self.leader_id
+
+    def is_leader(self) -> bool:
+        """Return True if this node is the current leader."""
+        return self.state == "leader"
+
+    def is_election_ongoing(self) -> bool:
+        """Return True if an election is currently in progress."""
+        return self.state == "candidate" or self.leader_id is None

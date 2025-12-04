@@ -13,6 +13,9 @@ CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 MAX_ROOMS = 5
 MAX_MESSAGE_LENGTH = 256
 
+# Debug commands
+DEBUG_COMMANDS = {"/instances", "/leader", "/kill-leader"}
+
 
 class ChatApp:
     def __init__(self, username=None):
@@ -153,6 +156,13 @@ class ChatApp:
 
     def _on_send_text(self, text: str) -> None:
         """Called from ChatUI (GUI thread) when the user hits Enter or Send."""
+        stripped = text.strip()
+        
+        # Check for debug commands
+        if stripped in DEBUG_COMMANDS:
+            self._handle_debug_command(stripped)
+            return
+
         # Validate message length (UTF-8 characters)
         if len(text) > MAX_MESSAGE_LENGTH:
             self.ui.add_system_message(
@@ -178,6 +188,44 @@ class ChatApp:
         t = threading.Thread(target=self._send_message_background, args=(payload,))
         t.daemon = True
         t.start()
+
+    def _handle_debug_command(self, command: str) -> None:
+        """Handle debug commands in a background thread."""
+        self.ui.add_system_message(f"Executing debug command: {command}")
+        t = threading.Thread(target=self._execute_debug_command, args=(command,), daemon=True)
+        t.start()
+
+    def _execute_debug_command(self, command: str) -> None:
+        """Execute a debug command and display the result."""
+        try:
+            if command == "/instances":
+                resp = get_with_raft_redirects(CLUSTER_URL, "/instances", timeout=5.0)
+                data = resp.json()
+                self.ui.add_system_message(f"[DEBUG] Instances: {data}")
+                
+            elif command == "/leader":
+                resp = get_with_raft_redirects(CLUSTER_URL, "/leader", timeout=5.0)
+                data = resp.json()
+                self.ui.add_system_message(f"[DEBUG] Leader: {data}")
+                
+            elif command == "/kill-leader":
+                # Use requests directly since we need POST and special error handling
+                try:
+                    resp = requests.post(CLUSTER_URL + "/kill-leader", timeout=10.0)
+                    data = resp.json()
+                    if resp.status_code == 200:
+                        self.ui.add_system_message(f"[DEBUG] Kill leader: {data}")
+                    else:
+                        self.ui.add_system_message(f"[DEBUG] Kill leader failed: {data}")
+                except requests.exceptions.RequestException as e:
+                    # Connection may be lost if leader dies - that's expected
+                    self.ui.add_system_message(f"[DEBUG] Kill leader: Request sent (connection lost - leader likely killed)")
+                    
+            self.ui.set_status(True)
+            
+        except Exception as e:
+            self.ui.add_system_message(f"[DEBUG] Command failed: {e}")
+            self.ui.set_status(False)
 
     def _send_message_background(self, payload: dict) -> None:
         try:

@@ -2,13 +2,15 @@ import argparse
 import asyncio
 import json
 import logging
+import os
+import sys
 from typing import List
+
+import requests
 
 from raft import RaftNode
 from state_machine import ChatState
 from discovery import build_peer_provider_from_env
-
-import os
 
 DCHAT_PUBLIC_HOST = os.environ.get("DCHAT_PUBLIC_HOST")  # e.g. "my-alb-1234.elb.amazonaws.com"
 DCHAT_PUBLIC_SCHEME = os.environ.get("DCHAT_PUBLIC_SCHEME", "http")
@@ -132,6 +134,128 @@ async def start_http_server(port: int, raft: RaftNode, state: ChatState) -> None
                 + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
                 + resp_body
             )
+            writer.write(resp)
+            await writer.drain()
+            writer.close()
+            return
+
+        # --- debug endpoints ---
+
+        if path == "/instances" and method == "GET":
+            nodes = raft.get_all_node_ids()
+            resp_body = json.dumps({"nodes": nodes}).encode()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                + resp_body
+            )
+            writer.write(resp)
+            await writer.drain()
+            writer.close()
+            return
+
+        if path == "/leader" and method == "GET":
+            leader = raft.get_leader_id()
+            resp_body = json.dumps({"leader": leader}).encode()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                + resp_body
+            )
+            writer.write(resp)
+            await writer.drain()
+            writer.close()
+            return
+
+        if path == "/kill-leader" and method == "POST":
+            # Throttle: reject if election is ongoing
+            if raft.is_election_ongoing():
+                resp_body = json.dumps({
+                    "status": "error",
+                    "error": "Election ongoing or no leader known. Try again later."
+                }).encode()
+                resp = (
+                    b"HTTP/1.1 503 Service Unavailable\r\n"
+                    b"Content-Type: application/json\r\n"
+                    + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                    + resp_body
+                )
+                writer.write(resp)
+                await writer.drain()
+                writer.close()
+                return
+
+            if raft.is_leader():
+                # This node is the leader - send response then die
+                resp_body = json.dumps({
+                    "status": "ok",
+                    "message": f"Leader {raft.node_id} is being killed. New election will start."
+                }).encode()
+                resp = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                    + resp_body
+                )
+                writer.write(resp)
+                await writer.drain()
+                writer.close()
+                
+                logger.info("Leader %s received /kill-leader - terminating with exit code 1", raft.node_id)
+                # Use os._exit to terminate immediately without cleanup
+                os._exit(1)
+                return
+
+            # Not the leader - proxy request to leader
+            leader_id = raft.get_leader_id()
+            if DCHAT_PUBLIC_HOST:
+                # AWS mode: proxy through ALB
+                proxy_url = f"{DCHAT_PUBLIC_SCHEME}://{DCHAT_PUBLIC_HOST}/kill-leader"
+            else:
+                # Local dev mode: proxy directly to leader's HTTP port
+                leader_http_port = LOCAL_LEADER_HTTP_PORTS.get(leader_id)
+                if leader_http_port is None:
+                    resp_body = json.dumps({
+                        "status": "error",
+                        "error": f"Unknown leader port for {leader_id}"
+                    }).encode()
+                    resp = (
+                        b"HTTP/1.1 500 Internal Server Error\r\n"
+                        b"Content-Type: application/json\r\n"
+                        + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                        + resp_body
+                    )
+                    writer.write(resp)
+                    await writer.drain()
+                    writer.close()
+                    return
+                proxy_url = f"http://127.0.0.1:{leader_http_port}/kill-leader"
+
+            logger.info("Proxying /kill-leader to leader at %s", proxy_url)
+            try:
+                proxy_resp = requests.post(proxy_url, timeout=5.0)
+                resp_body = proxy_resp.content
+                status_line = f"HTTP/1.1 {proxy_resp.status_code} {proxy_resp.reason}\r\n".encode()
+                resp = (
+                    status_line
+                    + b"Content-Type: application/json\r\n"
+                    + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                    + resp_body
+                )
+            except requests.exceptions.RequestException as e:
+                # Leader probably died during the request - that's expected!
+                resp_body = json.dumps({
+                    "status": "ok",
+                    "message": f"Leader kill request sent. Connection lost (leader likely terminated): {e}"
+                }).encode()
+                resp = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    + f"Content-Length: {len(resp_body)}\r\n\r\n".encode()
+                    + resp_body
+                )
             writer.write(resp)
             await writer.drain()
             writer.close()
