@@ -13,6 +13,8 @@ import os
 DCHAT_PUBLIC_HOST = os.environ.get("DCHAT_PUBLIC_HOST")  # e.g. "my-alb-1234.elb.amazonaws.com"
 DCHAT_PUBLIC_SCHEME = os.environ.get("DCHAT_PUBLIC_SCHEME", "http")
 
+MAX_MESSAGE_LENGTH = 256
+
 # Local dev mapping: RAFT leader id -> HTTP port
 LOCAL_LEADER_HTTP_PORTS = {
     "node0": 9000,
@@ -142,6 +144,26 @@ async def start_http_server(port: int, raft: RaftNode, state: ChatState) -> None
                 obj = json.loads(body.decode() or "{}")
             except Exception:
                 obj = {}
+
+            # Validate message length for chat messages
+            if obj.get("type") == "chat":
+                text = obj.get("text", "")
+
+                if len(text) > MAX_MESSAGE_LENGTH:
+                    error_body = json.dumps({
+                        "status": "error",
+                        "error": f"Message too long ({len(text)} chars). Maximum is {MAX_MESSAGE_LENGTH} characters."
+                    }).encode()
+                    resp = (
+                        b"HTTP/1.1 400 Bad Request\r\n"
+                        b"Content-Type: application/json\r\n"
+                        + f"Content-Length: {len(error_body)}\r\n\r\n".encode()
+                        + error_body
+                    )
+                    writer.write(resp)
+                    await writer.drain()
+                    writer.close()
+                    return
 
             res = await raft.handle_client_command(obj)
             status = res.get("status")

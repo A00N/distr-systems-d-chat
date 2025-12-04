@@ -11,6 +11,7 @@ from client import post_with_raft_redirects, get_with_raft_redirects
 CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
+MAX_MESSAGE_LENGTH = 256
 
 
 class ChatApp:
@@ -152,6 +153,13 @@ class ChatApp:
 
     def _on_send_text(self, text: str) -> None:
         """Called from ChatUI (GUI thread) when the user hits Enter or Send."""
+        # Validate message length (UTF-8 characters)
+        if len(text) > MAX_MESSAGE_LENGTH:
+            self.ui.add_system_message(
+                f"Message too long ({len(text)} chars). Maximum is {MAX_MESSAGE_LENGTH} characters."
+            )
+            return
+
         room = self._current_room or "general"
         msg_id = str(uuid.uuid4())
 
