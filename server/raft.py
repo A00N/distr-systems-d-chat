@@ -1,7 +1,13 @@
 import asyncio
 import logging
 import random
-from typing import Any, Dict, List, Callable, Optional
+from typing import Any, Dict, List, Callable, Optional, Protocol
+
+
+class PeerProvider(Protocol):
+    """Protocol for peer discovery - allows dynamic peer refresh."""
+    def peers(self) -> List[str]:
+        ...
 
 from message_protocol import encode_msg, decode_msg
 
@@ -66,14 +72,47 @@ class RaftNode:
         self.last_heartbeat = asyncio.get_event_loop().time()
         self.heartbeat_interval = 1.0
 
+        # election tracking
+        self._failed_elections = 0
+
         self.apply_callback = apply_callback
         self._server: Optional[asyncio.base_events.Server] = None
         self._lock = asyncio.Lock()
+        
+        # optional peer provider for dynamic peer refresh
+        self._peer_provider: Optional[Callable[[], List[str]]] = None
+        self._peer_refresh_interval = 30.0  # refresh peers every 30 seconds
+        self._last_peer_refresh = 0.0
 
     def _random_timeout(self) -> float:
         # Broader, longer timeout to avoid dueling elections in AWS
         return random.uniform(5.0, 10.0)
 
+    def set_peer_provider(self, provider: PeerProvider) -> None:
+        """Set a peer provider for dynamic peer discovery."""
+        self._peer_provider = provider.peers
+        
+    def _refresh_peers_if_needed(self) -> None:
+        """Refresh peer list from provider if interval has elapsed."""
+        if self._peer_provider is None:
+            logger.info("OBS! _refresh_peers_if_needed() called but no peer provider set")
+            return
+            
+        now = asyncio.get_event_loop().time()
+        if now - self._last_peer_refresh >= self._peer_refresh_interval:
+            try:
+                new_peers = self._peer_provider()
+                if set(new_peers) != set(self.peers):
+                    logger.info(
+                        "%s: Peer list updated: %s -> %s",
+                        self.node_id, self.peers, new_peers
+                    )
+                self.peers = new_peers
+                self._last_peer_refresh = now
+
+                logger.debug("Peers updated: %s", self.peers)
+            except Exception as e:
+                logger.warning("%s: Failed to refresh peers: %s", self.node_id, e)
 
     async def start(self) -> None:
         self._server = await asyncio.start_server(
@@ -201,9 +240,16 @@ class RaftNode:
                     "success": False,
                 }
 
+            # Valid AppendEntries from current or newer term - update state
             self.current_term = term
             self.state = "follower"
+            self.leader_id = leader_id  # Track who the leader is
             self.last_heartbeat = asyncio.get_event_loop().time()
+
+            logger.debug(
+                "%s: Recognized %s as leader for term %d",
+                self.node_id, leader_id, term
+            )
 
             # check log consistency
             if prev_log_index >= 0:
@@ -350,6 +396,10 @@ class RaftNode:
         while True:
             await asyncio.sleep(0.2)
             now = loop.time()
+            
+            # Periodically refresh peers from provider (if set)
+            self._refresh_peers_if_needed()
+            
             if self.state == "leader":
                 # send heartbeats
                 await self._send_heartbeats()
@@ -365,15 +415,21 @@ class RaftNode:
             self.state = "candidate"
             self.current_term += 1
             self.voted_for = self.node_id
+            self.leader_id = None  # Clear leader - we're starting an election
             term_started = self.current_term
             votes = 1
 
             last_index = len(self.log) - 1
             last_term = self.log[last_index].term if self.log else 0
+            
+            logger.info(
+                "%s: Starting election for term %d",
+                self.node_id, term_started
+            )
 
         # send RequestVote to all peers
-    # send RequestVote to all peers
         tasks = []
+
         for peer in self.peers:
             host, port_s = peer.split(":")
             port = int(port_s)
@@ -422,8 +478,12 @@ class RaftNode:
                     self.node_id, self.current_term, votes
                 )
                 self.state = "leader"
+                self.leader_id = self.node_id  # We are the leader
                 self.last_heartbeat = asyncio.get_event_loop().time()
                 self._failed_elections = 0
+                
+                # Immediately send heartbeats to establish leadership
+                asyncio.create_task(self._send_heartbeats())
             else:
                 self._failed_elections += 1
                 logger.info(

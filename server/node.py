@@ -26,7 +26,7 @@ logging.getLogger("raft").setLevel(logging.DEBUG)
 logger = logging.getLogger("node")
 
 
-async def run_node(node_id: str, http_port: int, raft_port: int, peers: List[str]) -> None:
+async def run_node(node_id: str, http_port: int, raft_port: int, peers: List[str], peer_provider=None) -> None:
     state = ChatState(path=f"chat_log_{http_port}.jsonl")
 
     async def apply_callback(command):
@@ -39,6 +39,14 @@ async def run_node(node_id: str, http_port: int, raft_port: int, peers: List[str
         peers=peers,
         apply_callback=apply_callback,
     )
+    
+    # Enable dynamic peer refresh if provider is available
+    if peer_provider is not None:
+        raft.set_peer_provider(peer_provider)
+        logger.info("Dynamic peer discovery enabled for %s", node_id)
+    else:
+        logger.info("OBS! Dynamic peer discovery disabled for %s", node_id)
+        logger.info("run_node() never received a peer_provider")
 
     await raft.start()
     asyncio.create_task(start_http_server(http_port, raft, state))
@@ -224,7 +232,8 @@ if __name__ == "__main__":
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    loop.create_task(run_node(args.id, args.http_port, args.raft_port, resolved_peers))
+    # Pass peer_provider to enable dynamic peer refresh (removes terminated instances)
+    loop.create_task(run_node(args.id, args.http_port, args.raft_port, resolved_peers, peer_provider))
 
     try:
         loop.run_forever()
