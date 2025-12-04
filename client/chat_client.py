@@ -8,8 +8,8 @@ from tkinter import simpledialog
 from gui import ChatUI
 from client import post_with_raft_redirects, get_with_raft_redirects
 
-#CLUSTER_URL = "http://127.0.0.1:9000" # Local testing
-CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
+CLUSTER_URL = "http://127.0.0.1:9000" # Local testing
+#CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
 MAX_MESSAGE_LENGTH = 256
@@ -74,11 +74,24 @@ class ChatApp:
         t = threading.Thread(target=self._initial_health_check, daemon=True)
         t.start()
 
+        # Send user_connected event to the server to notify other clients
+        conn_thread = threading.Thread(target=self._send_user_connected, daemon=True)
+        conn_thread.start()
+
         # Background polling of /messages
         poller = threading.Thread(target=self._poll_messages_loop, daemon=True)
         poller.start()
 
     # ---------- background health check ----------
+
+    def _send_user_connected(self) -> None:
+        """Send a user_connected event to the server so other clients see the user immediately."""
+        cmd = {"type": "user_connected", "user": self.username}
+        try:
+            post_with_raft_redirects(CLUSTER_URL, cmd)
+        except Exception as e:
+            # Not critical; polling will still track user presence from chat messages
+            pass
 
     def _initial_health_check(self) -> None:
         try:
@@ -278,6 +291,12 @@ class ChatApp:
                                 self._users.add(user)
                                 self.ui.add_user_connected(user)
                             self._user_last_seen[user] = now
+
+                        # Handle user_connected events to immediately add users to the list
+                        if msg_type == "user_connected":
+                            if user and user not in self._users:
+                                self._users.add(user)
+                                self.ui.add_user_connected(user)
 
                         if msg_type == "room_add":
                             room = m.get("room")
