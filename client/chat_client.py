@@ -104,15 +104,17 @@ class ChatApp:
     def _heartbeat_loop(self) -> None:
         """Periodically send heartbeat to keep user presence alive for other clients."""
         while self._polling:
-            time.sleep(30)  # Send heartbeat every 30 seconds
-            if not self._polling:
-                break
+            # Send heartbeat BEFORE sleeping (fixes initial 30s gap)
             # Include unique ID so each heartbeat is tracked separately
             cmd = {"type": "user_heartbeat", "user": self.username, "id": str(uuid.uuid4())}
             try:
                 post_with_raft_redirects(CLUSTER_URL, cmd, timeout=2.0)
             except Exception:
                 pass  # Don't spam errors for heartbeat failures
+            
+            time.sleep(20)  # Send heartbeat every 20 seconds (more frequent than before)
+            if not self._polling:
+                break
 
     def _initial_health_check(self) -> None:
         try:
@@ -208,6 +210,9 @@ class ChatApp:
 
         room = self._current_room or "general"
         msg_id = str(uuid.uuid4())
+
+        # Refresh our own last seen timestamp (we're clearly active!)
+        self._user_last_seen[self.username] = time.time()
 
         # Local gray echo
         self._pending_ids.add(msg_id)
@@ -315,20 +320,27 @@ class ChatApp:
                             # create a pseudo-key from type + user + room
                             presence_key = f"{msg_type}:{user}:{m.get('room', '')}"
 
-                        # --- Active users tracking (ONLY for NEW messages) ---
-                        if user and presence_key not in self._processed_for_presence:
-                            self._processed_for_presence.add(presence_key)
+                        # Skip already-processed messages entirely
+                        if presence_key in self._processed_for_presence:
+                            continue
+                        
+                        self._processed_for_presence.add(presence_key)
+
+                        # --- Active users tracking for chat/heartbeat messages ---
+                        if user and msg_type in ("chat", "user_heartbeat"):
                             now = time.time()
                             if user not in self._users:
                                 self._users.add(user)
                                 self.ui.add_user_connected(user)
                             self._user_last_seen[user] = now
 
-                        # Handle user_connected events to immediately add users to the list
+                        # Handle user_connected events to add users to the list
                         if msg_type == "user_connected":
                             if user and user not in self._users:
                                 self._users.add(user)
                                 self.ui.add_user_connected(user)
+                            if user:
+                                self._user_last_seen[user] = time.time()
                         
                         # Handle user_disconnected events to remove users from the list
                         elif msg_type == "user_disconnected":
@@ -337,8 +349,6 @@ class ChatApp:
                                 self.ui.remove_user_connected(user)
                                 if user in self._user_last_seen:
                                     del self._user_last_seen[user]
-                        
-                        # user_heartbeat events are handled by the general presence tracking above
 
                         if msg_type == "room_add":
                             room = m.get("room")
@@ -379,11 +389,12 @@ class ChatApp:
                                 text = m.get("text", "")
                                 self.ui.add_message(user_display, text, timestamp, style="normal")
 
-                    # Prune inactive users (no activity in last 60 seconds)
+                    # Prune inactive users (no activity in last 90 seconds)
+                    # Never prune ourselves - we know we're connected!
                     now = time.time()
                     inactive = [
                         u for u, last in self._user_last_seen.items()
-                        if now - last > 60
+                        if now - last > 90 and u != self.username
                     ]
                     for u in inactive:
                         if u in self._users:
