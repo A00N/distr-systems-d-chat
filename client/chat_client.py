@@ -8,8 +8,8 @@ from tkinter import simpledialog
 from gui import ChatUI
 from client import post_with_raft_redirects, get_with_raft_redirects
 
-CLUSTER_URL = "http://127.0.0.1:9000" # Local testing
-#CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
+# CLUSTER_URL = "http://127.0.0.1:9000" # Local testing
+CLUSTER_URL = "http://DChatALB-596522607.eu-north-1.elb.amazonaws.com"
 
 MAX_ROOMS = 5
 MAX_MESSAGE_LENGTH = 256
@@ -44,6 +44,10 @@ class ChatApp:
 
         # Track which committed chat messages we've already rendered
         self._seen_msg_ids = set()
+        
+        # Track which messages we've already processed for user presence
+        # (separate from _seen_msg_ids to avoid bugs with historical messages)
+        self._processed_for_presence = set()
 
 
         self.ui = ChatUI(
@@ -81,17 +85,34 @@ class ChatApp:
         # Background polling of /messages
         poller = threading.Thread(target=self._poll_messages_loop, daemon=True)
         poller.start()
+        
+        # Background heartbeat to keep user presence alive
+        heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        heartbeat.start()
 
     # ---------- background health check ----------
 
     def _send_user_connected(self) -> None:
         """Send a user_connected event to the server so other clients see the user immediately."""
-        cmd = {"type": "user_connected", "user": self.username}
+        cmd = {"type": "user_connected", "user": self.username, "id": str(uuid.uuid4())}
         try:
             post_with_raft_redirects(CLUSTER_URL, cmd)
         except Exception as e:
             # Not critical; polling will still track user presence from chat messages
             pass
+    
+    def _heartbeat_loop(self) -> None:
+        """Periodically send heartbeat to keep user presence alive for other clients."""
+        while self._polling:
+            time.sleep(30)  # Send heartbeat every 30 seconds
+            if not self._polling:
+                break
+            # Include unique ID so each heartbeat is tracked separately
+            cmd = {"type": "user_heartbeat", "user": self.username, "id": str(uuid.uuid4())}
+            try:
+                post_with_raft_redirects(CLUSTER_URL, cmd, timeout=2.0)
+            except Exception:
+                pass  # Don't spam errors for heartbeat failures
 
     def _initial_health_check(self) -> None:
         try:
@@ -283,9 +304,20 @@ class ChatApp:
                         msg_type = m.get("type", "chat")
                         timestamp = m.get("timestamp") 
                         user = m.get("user")
+                        msg_id = m.get("id")
+                        
+                        # Create a unique key for this message for presence tracking
+                        # Use msg_id if available, otherwise create a pseudo-id from content
+                        if msg_id:
+                            presence_key = msg_id
+                        else:
+                            # For events without id (user_connected, room_add, etc.)
+                            # create a pseudo-key from type + user + room
+                            presence_key = f"{msg_type}:{user}:{m.get('room', '')}"
 
-                        # --- Active users tracking (ok to update every time) ---
-                        if user:
+                        # --- Active users tracking (ONLY for NEW messages) ---
+                        if user and presence_key not in self._processed_for_presence:
+                            self._processed_for_presence.add(presence_key)
                             now = time.time()
                             if user not in self._users:
                                 self._users.add(user)
@@ -297,6 +329,16 @@ class ChatApp:
                             if user and user not in self._users:
                                 self._users.add(user)
                                 self.ui.add_user_connected(user)
+                        
+                        # Handle user_disconnected events to remove users from the list
+                        elif msg_type == "user_disconnected":
+                            if user and user in self._users:
+                                self._users.remove(user)
+                                self.ui.remove_user_connected(user)
+                                if user in self._user_last_seen:
+                                    del self._user_last_seen[user]
+                        
+                        # user_heartbeat events are handled by the general presence tracking above
 
                         if msg_type == "room_add":
                             room = m.get("room")
@@ -316,7 +358,7 @@ class ChatApp:
                                     self.ui.set_rooms(sorted(self._rooms), select=self._current_room)
 
                         elif msg_type == "chat":
-                            msg_id = m.get("id")
+                            # msg_id already retrieved above
                             timestamp = m.get("timestamp")  # or "ts"
                             # If this committed message corresponds to a local pending echo,
                             # remove the gray line.
@@ -337,11 +379,11 @@ class ChatApp:
                                 text = m.get("text", "")
                                 self.ui.add_message(user_display, text, timestamp, style="normal")
 
-                    # Prune inactive users (no activity in last 300 seconds)
+                    # Prune inactive users (no activity in last 60 seconds)
                     now = time.time()
                     inactive = [
                         u for u, last in self._user_last_seen.items()
-                        if now - last > 300
+                        if now - last > 60
                     ]
                     for u in inactive:
                         if u in self._users:
@@ -364,6 +406,16 @@ class ChatApp:
 
     def _on_close(self) -> None:
         self._polling = False
+        # Notify server of disconnect (best effort)
+        self._send_user_disconnected()
+    
+    def _send_user_disconnected(self) -> None:
+        """Send a user_disconnected event to the server so other clients remove the user."""
+        cmd = {"type": "user_disconnected", "user": self.username, "id": str(uuid.uuid4())}
+        try:
+            post_with_raft_redirects(CLUSTER_URL, cmd, timeout=1.0)
+        except Exception:
+            pass  # Best effort - don't block close if server unreachable
 
     def run(self) -> None:
         self.ui.run()
